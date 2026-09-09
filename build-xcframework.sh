@@ -226,12 +226,18 @@ for slice in $SLICES; do
   log "[$slice] merging static libraries"
   merged="$build_dir/CesiumNative.a"
   rm -f "$merged"
+  # SQLite is deliberately left out: iOS ships libsqlite3, and a second copy
+  # in the same process makes any other user of the system library mix
+  # handles from two builds. Consumers link the system library instead.
+  EXCLUDED_ARCHIVES="libsqlite3.a"
+  excluded() { case " $EXCLUDED_ARCHIVES " in *" $(basename "$1") "*) return 0 ;; *) return 1 ;; esac; }
   libs=()
-  while IFS= read -r -d '' f; do libs+=("$f"); done < <(find "$install_dir/lib" -maxdepth 1 -name '*.a' -print0 | sort -z)
+  while IFS= read -r -d '' f; do excluded "$f" || libs+=("$f"); done < <(find "$install_dir/lib" -maxdepth 1 -name '*.a' -print0 | sort -z)
   # cesium's install() only copies dependency libs in ezvcpkg mode; in classic
   # mode they are pulled straight from vcpkg's installed tree for the triplet.
   while IFS= read -r -d '' f; do
     name="$(basename "$f")"
+    excluded "$f" && continue
     [[ -f "$install_dir/lib/$name" ]] || libs+=("$f")
   done < <(find "$installed_dir/lib" -maxdepth 1 -name '*.a' -print0 | sort -z)
   [[ ${#libs[@]} -gt 0 ]] || die "[$slice] no static libraries found"

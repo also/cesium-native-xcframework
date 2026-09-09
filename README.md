@@ -22,6 +22,12 @@ Output goes to `~/.cache/cesium-native-xcframework/out` (override with `CESIUM_B
 )
 ```
 
+The archive does not include SQLite. Link the system library from the target that depends on `CesiumNative`:
+
+```swift
+linkerSettings: [.linkedLibrary("sqlite3")]
+```
+
 ## License
 
 Scripts in this repository: Apache 2.0 (`LICENSE`). The xcframework contains cesium-native and its dependencies; their licenses are in `THIRD_PARTY_LICENSES`.
