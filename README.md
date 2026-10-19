@@ -12,6 +12,14 @@ mise install && mise exec -- ./build-xcframework.sh
 
 Output goes to `~/.cache/cesium-native-xcframework/out` (override with `CESIUM_BUILD_ROOT`).
 
+### visionOS
+
+```
+mise exec -- ./build-xcframework.sh --slices "visionos visionos-simulator"
+```
+
+Builds `xros-arm64` and `xros-arm64-simulator` slices (minimum visionOS 2.0). vcpkg has no visionOS toolchain, so the visionOS triplets chainload `toolchains/visionos.cmake`; `ports/openssl` overlays the stock port so visionOS builds the way tvOS does; and the script patches cesium-native's iOS-only "skip asmjit" checks to cover visionOS. Slice names can be combined with `device simulator` to get all four in one xcframework.
+
 ## Use
 
 ```swift
