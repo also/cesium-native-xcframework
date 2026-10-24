@@ -36,6 +36,10 @@ FRAMEWORK="$OUT_DIR/CesiumNative.xcframework"
 
 cd "$REPO_DIR"
 command -v gh >/dev/null || die "gh is required"
+# Always the origin repo: gh would otherwise pick the default, which can be
+# the upstream remote.
+REPO="$(git remote get-url origin | sed -E 's#^.*github.com[:/]##; s#\.git$##')"
+[[ -n "$REPO" ]] || die "couldn't work out the origin repo"
 [[ -f "$ZIP" && -f "$MANIFEST" && -d "$FRAMEWORK" ]] || die "no build in $OUT_DIR; run build-xcframework.sh first"
 
 # The tag must point at a commit that's on the remote, and the tree must be
@@ -44,7 +48,7 @@ command -v gh >/dev/null || die "gh is required"
 COMMIT="$(git rev-parse HEAD)"
 git fetch -q origin
 git branch -r --contains "$COMMIT" | grep -q . || die "HEAD ($COMMIT) isn't pushed; push the branch first"
-gh release view "$TAG" >/dev/null 2>&1 && die "release $TAG already exists"
+gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1 && die "release $TAG already exists"
 
 # SwiftPM wants the framework at the zip's top level, and the checksum is the
 # zip's SHA-256. Also confirm the zip is what's in the build directory, not an
@@ -66,7 +70,7 @@ trap 'rm -f "$NOTES"' EXIT
   echo "$SUM"
   echo '```'
   echo
-  echo "Built from \`$COMMIT\` of $(git remote get-url origin | sed -E 's#^.*github.com[:/]##; s#\.git$##')."
+  echo "Built from \`$COMMIT\` of $REPO."
   echo
   echo '```'
   cat "$MANIFEST"
@@ -75,6 +79,7 @@ trap 'rm -f "$NOTES"' EXIT
   echo "The archive does not include SQLite; link the system \`libsqlite3\`."
 } > "$NOTES"
 
+echo "repo:     $REPO"
 echo "tag:      $TAG (at $COMMIT)"
 echo "slices:   $SLICES"
 echo "zip:      $ZIP ($(du -h "$ZIP" | cut -f1))"
@@ -87,5 +92,5 @@ if [[ $YES -ne 1 ]]; then
   exit 0
 fi
 
-gh release create "$TAG" "$ZIP" "$REPO_DIR/THIRD_PARTY_LICENSES" \
+gh release create "$TAG" --repo "$REPO" "$ZIP" "$REPO_DIR/THIRD_PARTY_LICENSES" \
   --target "$COMMIT" --title "$TAG" --notes-file "$NOTES" ${PRERELEASE[@]+"${PRERELEASE[@]}"}
