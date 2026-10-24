@@ -30,6 +30,23 @@ Builds a `macos-arm64` slice (arm64 only, minimum macOS 15.0) using the `arm64-o
 
 ## Use
 
+### Swift Package Manager
+
+`Package.swift` exposes a `CesiumNative` library backed by the release zip (URL and checksum are set per release). Add this repo as a package dependency and link `libsqlite3` from your target.
+
+To develop against a local build, symlink the xcframework next to `Package.swift` and depend on the directory (`.package(path:)`, or `packages: … path:` in XcodeGen). The symlink is gitignored; remove it to go back to the release.
+
+```
+ln -s ~/.cache/cesium-native-xcframework/out/CesiumNative.xcframework .
+```
+
+### Publishing a release
+
+`scripts/publish-release.sh <tag>` checks the last build and prints the release it would create; add `--yes` to publish. Then update `release` and `checksum` in `Package.swift` and commit.
+
+### Binary target by URL
+
+
 ```swift
 .binaryTarget(
     name: "CesiumNative",
