@@ -19,6 +19,7 @@
 # ── Triplets (triplets/) ────────────────────────────────────────────────────
 #   device     arm64-ios-release            iphoneos,        min iOS 18.0, static, release-only
 #   simulator  arm64-ios-simulator-release  iphonesimulator, min iOS 18.0, static, release-only
+#   macos               arm64-osx-release             macosx,      min macOS 15.0, arm64 only
 #   visionos            arm64-visionos-release            xros,        min visionOS 2.0
 #   visionos-simulator  arm64-visionos-simulator-release  xrsimulator, min visionOS 2.0
 #     vcpkg has no visionOS toolchain, so these chainload toolchains/visionos.cmake,
@@ -50,7 +51,7 @@
 #   checkout and commit pinned here.
 #
 # ── Usage ───────────────────────────────────────────────────────────────────
-#   mise exec -- ./build-xcframework.sh [--slices "device simulator visionos visionos-simulator"]
+#   mise exec -- ./build-xcframework.sh [--slices "device simulator visionos visionos-simulator macos"]
 #                                      [--skip-deps] [--skip-build] [--clean]
 #   Environment:
 #     CESIUM_BUILD_ROOT   scratch root (default ~/.cache/cesium-native-xcframework)
@@ -72,6 +73,7 @@ VCPKG_COMMIT="56bb2411609227288b70117ead2c47585ba07713"
 VCPKG_REPO="https://github.com/microsoft/vcpkg.git"
 DEPLOYMENT_TARGET="18.0"
 VISIONOS_DEPLOYMENT_TARGET="2.0"
+MACOS_DEPLOYMENT_TARGET="15.0"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TRIPLETS_DIR="$SCRIPT_DIR/triplets"
@@ -160,6 +162,7 @@ slice_triplet() {
     simulator) echo arm64-ios-simulator-release ;;
     visionos) echo arm64-visionos-release ;;
     visionos-simulator) echo arm64-visionos-simulator-release ;;
+    macos) echo arm64-osx-release ;;
     *) die "unknown slice $1" ;;
   esac
 }
@@ -167,14 +170,21 @@ slice_sysroot() {
   case "$1" in
     device) echo iphoneos ;; simulator) echo iphonesimulator ;;
     visionos) echo xros ;; visionos-simulator) echo xrsimulator ;;
+    macos) echo macosx ;;
   esac
 }
-slice_system() { case "$1" in visionos*) echo visionOS ;; *) echo iOS ;; esac; }
-slice_min_os() { case "$1" in visionos*) echo "$VISIONOS_DEPLOYMENT_TARGET" ;; *) echo "$DEPLOYMENT_TARGET" ;; esac; }
+slice_system() { case "$1" in visionos*) echo visionOS ;; macos) echo Darwin ;; *) echo iOS ;; esac; }
+slice_min_os() { case "$1" in visionos*) echo "$VISIONOS_DEPLOYMENT_TARGET" ;; macos) echo "$MACOS_DEPLOYMENT_TARGET" ;; *) echo "$DEPLOYMENT_TARGET" ;; esac; }
 
 # ── Per-slice: dependencies → configure → build → install → merge ──────────
 for slice in $SLICES; do
   triplet="$(slice_triplet "$slice")"
+  # macOS can JIT, so it takes the upstream blend2d + asmjit pair that
+  # cesium-native's CMake requires there; every other slice uses blend2d[core].
+  packages=("${PACKAGES[@]}")
+  if [[ "$slice" == macos ]]; then
+    packages=("${packages[@]/blend2d\[core\]/blend2d}" asmjit)
+  fi
   sysroot="$(slice_sysroot "$slice")"
   system="$(slice_system "$slice")"
   min_os="$(slice_min_os "$slice")"
@@ -184,14 +194,14 @@ for slice in $SLICES; do
   mkdir -p "$build_dir"
 
   if [[ $SKIP_DEPS -eq 0 ]]; then
-    log "[$slice] vcpkg install ${#PACKAGES[@]} ports for $triplet"
+    log "[$slice] vcpkg install ${#packages[@]} ports for $triplet"
     # Ports that fail on iOS can be retried standalone with the stock
     # arm64-ios(-simulator) community triplet (the community-thread fallback);
     # the log records which, if any, needed it.
     ports_log="$OUT_DIR/ports.$slice.log"
     : > "$ports_log"
     failed=()
-    for pkg in "${PACKAGES[@]}"; do
+    for pkg in "${packages[@]}"; do
       if "$VCPKG_ROOT/vcpkg" install "$pkg" \
            --triplet "$triplet" \
            --overlay-triplets="$TRIPLETS_DIR" \
@@ -205,7 +215,7 @@ for slice in $SLICES; do
         failed+=("$pkg")
       fi
     done
-    if [[ ${#failed[@]} -gt 0 && "$system" != iOS ]]; then
+    if [[ ${#failed[@]} -gt 0 && "$system" != iOS && "$system" != Darwin ]]; then
       die "[$slice] ports failed: ${failed[*]} (no stock $system triplet to fall back to); see $ports_log"
     fi
     if [[ ${#failed[@]} -gt 0 ]]; then
