@@ -3,8 +3,8 @@
 # build-xcframework.sh — cesium-native → CesiumNative.xcframework
 #
 # Builds cesium-native and every one of its vcpkg dependencies as static
-# libraries for two iOS slices (arm64 device, arm64 simulator), merges each
-# slice into a single archive, and wraps both in an xcframework with headers.
+# libraries for the selected Apple platform slices, merges each slice into a
+# single archive, and wraps them in an xcframework with headers.
 # Sources, build trees, and outputs live under $CESIUM_BUILD_ROOT
 # (default ~/.cache/cesium-native-xcframework); nothing is written elsewhere.
 #
@@ -19,6 +19,8 @@
 # ── Triplets (triplets/) ────────────────────────────────────────────────────
 #   device     arm64-ios-release            iphoneos,        min iOS 18.0, static, release-only
 #   simulator  arm64-ios-simulator-release  iphonesimulator, min iOS 18.0, static, release-only
+#   tvos                arm64-tvos-release             appletvos,        min tvOS 18.0
+#   tvos-simulator      arm64-tvos-simulator-release   appletvsimulator, min tvOS 18.0
 #   macos               arm64-osx-release             macosx,      min macOS 15.0, arm64 only
 #   visionos            arm64-visionos-release            xros,        min visionOS 2.0
 #   visionos-simulator  arm64-visionos-simulator-release  xrsimulator, min visionOS 2.0
@@ -51,7 +53,7 @@
 #   checkout and commit pinned here.
 #
 # ── Usage ───────────────────────────────────────────────────────────────────
-#   mise exec -- ./build-xcframework.sh [--slices "device simulator visionos visionos-simulator macos"]
+#   mise exec -- ./build-xcframework.sh [--slices "device simulator tvos tvos-simulator visionos visionos-simulator macos"]
 #                                      [--skip-deps] [--skip-build] [--clean]
 #   Environment:
 #     CESIUM_BUILD_ROOT   scratch root (default ~/.cache/cesium-native-xcframework)
@@ -73,6 +75,7 @@ VCPKG_COMMIT="56bb2411609227288b70117ead2c47585ba07713"
 VCPKG_REPO="https://github.com/microsoft/vcpkg.git"
 DEPLOYMENT_TARGET="18.0"
 VISIONOS_DEPLOYMENT_TARGET="2.0"
+TVOS_DEPLOYMENT_TARGET="18.0"
 MACOS_DEPLOYMENT_TARGET="15.0"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -138,13 +141,12 @@ if [[ "$(git -C "$VCPKG_ROOT" rev-parse HEAD)" != "$VCPKG_COMMIT" ]]; then
   git -C "$VCPKG_ROOT" checkout --quiet "$VCPKG_COMMIT"
 fi
 [[ -x "$VCPKG_ROOT/vcpkg" ]] || { log "bootstrapping vcpkg"; "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics; }
-# cesium-native skips asmjit (blend2d's JIT) only when it sees iOS; visionOS
-# has no JIT either. Idempotent: the replacement no longer matches the pattern.
-CESIUM_ASMJIT_GUARD='NOT IOS AND NOT VCPKG_CMAKE_SYSTEM_NAME MATCHES "iOS")'
+# Mobile Apple platforms cannot JIT. Accept both pristine upstream sources
+# and the visionOS guard written by earlier versions of this script.
 for f in "$SRC_DIR/CMakeLists.txt" "$SRC_DIR/CesiumVectorData/CMakeLists.txt"; do
-  if grep -qF "$CESIUM_ASMJIT_GUARD" "$f"; then
-    log "patching asmjit guard for visionOS in ${f#$SRC_DIR/}"
-    sed -i '' 's/NOT IOS AND NOT VCPKG_CMAKE_SYSTEM_NAME MATCHES "iOS")/NOT IOS AND NOT VCPKG_CMAKE_SYSTEM_NAME MATCHES "iOS|visionOS" AND NOT CMAKE_SYSTEM_NAME STREQUAL "visionOS")/' "$f"
+  if grep -qE 'NOT VCPKG_CMAKE_SYSTEM_NAME MATCHES "iOS(\|visionOS)?"' "$f"; then
+    log "patching asmjit guard for visionOS/tvOS in ${f#$SRC_DIR/}"
+    sed -i '' -E 's/NOT VCPKG_CMAKE_SYSTEM_NAME MATCHES "iOS(\|visionOS)?"( AND NOT CMAKE_SYSTEM_NAME STREQUAL "visionOS")?/NOT VCPKG_CMAKE_SYSTEM_NAME MATCHES "iOS|visionOS|tvOS" AND NOT CMAKE_SYSTEM_NAME MATCHES "visionOS|tvOS"/g' "$f"
   fi
 done
 
@@ -162,6 +164,8 @@ slice_triplet() {
     simulator) echo arm64-ios-simulator-release ;;
     visionos) echo arm64-visionos-release ;;
     visionos-simulator) echo arm64-visionos-simulator-release ;;
+    tvos) echo arm64-tvos-release ;;
+    tvos-simulator) echo arm64-tvos-simulator-release ;;
     macos) echo arm64-osx-release ;;
     *) die "unknown slice $1" ;;
   esac
@@ -170,11 +174,12 @@ slice_sysroot() {
   case "$1" in
     device) echo iphoneos ;; simulator) echo iphonesimulator ;;
     visionos) echo xros ;; visionos-simulator) echo xrsimulator ;;
+    tvos) echo appletvos ;; tvos-simulator) echo appletvsimulator ;;
     macos) echo macosx ;;
   esac
 }
-slice_system() { case "$1" in visionos*) echo visionOS ;; macos) echo Darwin ;; *) echo iOS ;; esac; }
-slice_min_os() { case "$1" in visionos*) echo "$VISIONOS_DEPLOYMENT_TARGET" ;; macos) echo "$MACOS_DEPLOYMENT_TARGET" ;; *) echo "$DEPLOYMENT_TARGET" ;; esac; }
+slice_system() { case "$1" in tvos*) echo tvOS ;; visionos*) echo visionOS ;; macos) echo Darwin ;; *) echo iOS ;; esac; }
+slice_min_os() { case "$1" in tvos*) echo "$TVOS_DEPLOYMENT_TARGET" ;; visionos*) echo "$VISIONOS_DEPLOYMENT_TARGET" ;; macos) echo "$MACOS_DEPLOYMENT_TARGET" ;; *) echo "$DEPLOYMENT_TARGET" ;; esac; }
 
 # ── Per-slice: dependencies → configure → build → install → merge ──────────
 for slice in $SLICES; do
