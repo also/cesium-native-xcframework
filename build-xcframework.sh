@@ -30,8 +30,9 @@
 #     iOS" checks are patched to cover visionOS too (no JIT there either).
 #
 # ── cesium-native CMake options ─────────────────────────────────────────────
-#   CMAKE_SYSTEM_NAME=iOS  CMAKE_OSX_ARCHITECTURES=arm64
-#   CMAKE_OSX_SYSROOT=iphoneos|iphonesimulator  CMAKE_OSX_DEPLOYMENT_TARGET=18.0
+#   CMAKE_SYSTEM_NAME=iOS|tvOS|visionOS|Darwin  CMAKE_OSX_ARCHITECTURES=arm64
+#   CMAKE_OSX_SYSROOT=<slice sysroot, see Triplets>
+#   CMAKE_OSX_DEPLOYMENT_TARGET=<slice minimum OS, see Triplets>
 #   CMAKE_BUILD_TYPE=Release  CESIUM_DISABLE_CURL=ON  CESIUM_TESTS_ENABLED=OFF
 #   CESIUM_INSTALL_STATIC_LIBS=ON  CESIUM_ENABLE_CLANG_TIDY=OFF
 #   VCPKG_MANIFEST_MODE=OFF (classic mode; see "Why classic mode" below)

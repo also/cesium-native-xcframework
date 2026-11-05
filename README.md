@@ -72,11 +72,10 @@ After building, update `release` and `checksum` in `Package.swift` to the new ta
 
 ### Binary target by URL
 
-
 ```swift
 .binaryTarget(
     name: "CesiumNative",
-    url: "https://github.com/crookneck/cesium-native-xcframework/releases/download/<tag>/CesiumNative.xcframework.zip",
+    url: "https://github.com/also/cesium-native-xcframework/releases/download/<tag>/CesiumNative.xcframework.zip",
     checksum: "<sha256 from the release notes>"
 )
 ```
