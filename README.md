@@ -2,7 +2,7 @@
 
 [cesium-native](https://github.com/CesiumGS/cesium-native) built as an Apple-platform xcframework.
 
-Release `v0.64.0-2` carries `CesiumNative.xcframework.zip`: cesium-native v0.64.0 (`80a22ff4`) and its vcpkg dependencies (vcpkg `56bb2411`), static, C++17:
+Release `v0.66.0-1` carries `CesiumNative.xcframework.zip`: cesium-native v0.66.0 (`d23e27e8`) and its vcpkg dependencies (vcpkg `56bb2411`), static, C++17:
 
 | Platform | arm64 slices | Minimum OS |
 | --- | --- | --- |

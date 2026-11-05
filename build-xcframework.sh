@@ -9,9 +9,9 @@
 # (default ~/.cache/cesium-native-xcframework); nothing is written elsewhere.
 #
 # ── Pins ────────────────────────────────────────────────────────────────────
-#   cesium-native   tag v0.64.0   commit 80a22ff4337c5b7057cff53d0055045c15c6d350
+#   cesium-native   tag v0.66.0   commit d23e27e864280e551c16302490b04e20c08e29ba
 #   vcpkg           commit 56bb2411609227288b70117ead2c47585ba07713
-#                   (the baseline cesium-native v0.64.0 declares in its own
+#                   (the baseline cesium-native v0.66.0 declares in its own
 #                    vcpkg-configuration.json / ezvcpkg_fetch call, so the port
 #                    versions are exactly the ones cesium's CI builds)
 #   CMake / Ninja   pinned in .mise.toml
@@ -69,8 +69,8 @@
 #
 set -euo pipefail
 
-CESIUM_TAG="v0.64.0"
-CESIUM_COMMIT="80a22ff4337c5b7057cff53d0055045c15c6d350"
+CESIUM_TAG="v0.66.0"
+CESIUM_COMMIT="d23e27e864280e551c16302490b04e20c08e29ba"
 CESIUM_REPO="https://github.com/CesiumGS/cesium-native.git"
 VCPKG_COMMIT="56bb2411609227288b70117ead2c47585ba07713"
 VCPKG_REPO="https://github.com/microsoft/vcpkg.git"
@@ -129,6 +129,14 @@ mkdir -p "$BUILD_ROOT_DIR" "$OUT_DIR"
 if [[ ! -d "$SRC_DIR/.git" ]]; then
   log "cloning cesium-native $CESIUM_TAG"
   git clone --branch "$CESIUM_TAG" --depth 1 --recurse-submodules --shallow-submodules "$CESIUM_REPO" "$SRC_DIR"
+fi
+# An existing checkout of another version is moved to the pinned one. --force
+# drops the asmjit guard patch below, which is reapplied after.
+if [[ "$(git -C "$SRC_DIR" rev-parse HEAD)" != "$CESIUM_COMMIT" ]]; then
+  log "updating cesium-native checkout to $CESIUM_TAG"
+  git -C "$SRC_DIR" fetch --quiet --depth 1 origin tag "$CESIUM_TAG"
+  git -C "$SRC_DIR" checkout --quiet --force "$CESIUM_COMMIT"
+  git -C "$SRC_DIR" submodule update --quiet --init --recursive --depth 1 --force
 fi
 ACTUAL="$(git -C "$SRC_DIR" rev-parse HEAD)"
 [[ "$ACTUAL" == "$CESIUM_COMMIT" ]] || die "cesium-native at $ACTUAL, expected $CESIUM_COMMIT ($CESIUM_TAG)"
