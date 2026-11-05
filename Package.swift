@@ -14,8 +14,8 @@ let hasLocalFramework = FileManager.default.fileExists(
     atPath: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         .appendingPathComponent(localFramework).path)
 
-let release = "v0.64.0-2"
-let checksum = "ef11b2da2e2692fb82773b49cbc7d4c7165d0559acac67a80e0ff820b24c395c"
+let release = "v0.66.0-1"
+let checksum = "93341ccff222c78c5578cb52fe33883749c285994d494574fd8d46f80d51e5e6"
 
 let cesiumNative: Target = hasLocalFramework
     ? .binaryTarget(name: "CesiumNative", path: localFramework)
