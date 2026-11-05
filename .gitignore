@@ -1,0 +1,3 @@
+CesiumNative.xcframework
+.build/
+.swiftpm/

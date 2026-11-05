@@ -1,0 +1,51 @@
+# vcpkg chainload toolchain for tvOS (device and simulator).
+#
+# vcpkg recognises VCPKG_CMAKE_SYSTEM_NAME tvOS (VCPKG_TARGET_IS_TVOS)
+# but ships no toolchain for it, so the tvOS triplets point
+# VCPKG_CHAINLOAD_TOOLCHAIN_FILE here. Modelled on vcpkg's
+# scripts/toolchains/ios.cmake; CMake knows the tvOS platform
+# natively, so this only needs to pick the system name, arch and sysroot and
+# forward the triplet's flags. VCPKG_OSX_SYSROOT selects appletvos or
+# appletvsimulator; the explicit compiler target carries the minimum OS.
+if(NOT _VCPKG_TVOS_TOOLCHAIN)
+    set(_VCPKG_TVOS_TOOLCHAIN 1)
+
+    foreach(_policy CMP0056 CMP0066 CMP0067 CMP0137)
+        if(POLICY ${_policy})
+            cmake_policy(SET ${_policy} NEW)
+        endif()
+    endforeach()
+    list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES
+        VCPKG_CRT_LINKAGE VCPKG_TARGET_ARCHITECTURE
+        VCPKG_C_FLAGS VCPKG_CXX_FLAGS
+        VCPKG_C_FLAGS_DEBUG VCPKG_CXX_FLAGS_DEBUG
+        VCPKG_C_FLAGS_RELEASE VCPKG_CXX_FLAGS_RELEASE
+        VCPKG_LINKER_FLAGS VCPKG_LINKER_FLAGS_RELEASE VCPKG_LINKER_FLAGS_DEBUG
+    )
+
+    set(CMAKE_SYSTEM_NAME tvOS CACHE STRING "")
+    if(NOT VCPKG_TARGET_ARCHITECTURE STREQUAL "arm64")
+        message(FATAL_ERROR "tvOS triplets must be arm64, got ${VCPKG_TARGET_ARCHITECTURE}")
+    endif()
+    if(NOT CMAKE_SYSTEM_PROCESSOR)
+        set(CMAKE_SYSTEM_PROCESSOR aarch64)
+    endif()
+    set(CMAKE_OSX_ARCHITECTURES arm64 CACHE STRING "Build architectures for tvOS")
+
+    string(APPEND CMAKE_C_FLAGS_INIT " -fPIC ${VCPKG_C_FLAGS} ")
+    string(APPEND CMAKE_CXX_FLAGS_INIT " -fPIC ${VCPKG_CXX_FLAGS} ")
+    string(APPEND CMAKE_C_FLAGS_DEBUG_INIT " ${VCPKG_C_FLAGS_DEBUG} ")
+    string(APPEND CMAKE_CXX_FLAGS_DEBUG_INIT " ${VCPKG_CXX_FLAGS_DEBUG} ")
+    string(APPEND CMAKE_C_FLAGS_RELEASE_INIT " ${VCPKG_C_FLAGS_RELEASE} ")
+    string(APPEND CMAKE_CXX_FLAGS_RELEASE_INIT " ${VCPKG_CXX_FLAGS_RELEASE} ")
+
+    string(APPEND CMAKE_MODULE_LINKER_FLAGS_INIT " ${VCPKG_LINKER_FLAGS} ")
+    string(APPEND CMAKE_SHARED_LINKER_FLAGS_INIT " ${VCPKG_LINKER_FLAGS} ")
+    string(APPEND CMAKE_EXE_LINKER_FLAGS_INIT " ${VCPKG_LINKER_FLAGS} ")
+    string(APPEND CMAKE_MODULE_LINKER_FLAGS_DEBUG_INIT " ${VCPKG_LINKER_FLAGS_DEBUG} ")
+    string(APPEND CMAKE_SHARED_LINKER_FLAGS_DEBUG_INIT " ${VCPKG_LINKER_FLAGS_DEBUG} ")
+    string(APPEND CMAKE_EXE_LINKER_FLAGS_DEBUG_INIT " ${VCPKG_LINKER_FLAGS_DEBUG} ")
+    string(APPEND CMAKE_MODULE_LINKER_FLAGS_RELEASE_INIT " ${VCPKG_LINKER_FLAGS_RELEASE} ")
+    string(APPEND CMAKE_SHARED_LINKER_FLAGS_RELEASE_INIT " ${VCPKG_LINKER_FLAGS_RELEASE} ")
+    string(APPEND CMAKE_EXE_LINKER_FLAGS_RELEASE_INIT " ${VCPKG_LINKER_FLAGS_RELEASE} ")
+endif()

@@ -3,8 +3,8 @@
 # build-xcframework.sh — cesium-native → CesiumNative.xcframework
 #
 # Builds cesium-native and every one of its vcpkg dependencies as static
-# libraries for two iOS slices (arm64 device, arm64 simulator), merges each
-# slice into a single archive, and wraps both in an xcframework with headers.
+# libraries for the selected Apple platform slices, merges each slice into a
+# single archive, and wraps them in an xcframework with headers.
 # Sources, build trees, and outputs live under $CESIUM_BUILD_ROOT
 # (default ~/.cache/cesium-native-xcframework); nothing is written elsewhere.
 #
@@ -19,10 +19,20 @@
 # ── Triplets (triplets/) ────────────────────────────────────────────────────
 #   device     arm64-ios-release            iphoneos,        min iOS 18.0, static, release-only
 #   simulator  arm64-ios-simulator-release  iphonesimulator, min iOS 18.0, static, release-only
+#   tvos                arm64-tvos-release             appletvos,        min tvOS 18.0
+#   tvos-simulator      arm64-tvos-simulator-release   appletvsimulator, min tvOS 18.0
+#   macos               arm64-osx-release             macosx,      min macOS 15.0, arm64 only
+#   visionos            arm64-visionos-release            xros,        min visionOS 2.0
+#   visionos-simulator  arm64-visionos-simulator-release  xrsimulator, min visionOS 2.0
+#     vcpkg has no visionOS toolchain, so these chainload toolchains/visionos.cmake,
+#     and ports/openssl overlays the stock port to build visionOS the way it
+#     builds tvOS (iphoneos-cross, no-asm). cesium-native's "skip asmjit on
+#     iOS" checks are patched to cover visionOS too (no JIT there either).
 #
 # ── cesium-native CMake options ─────────────────────────────────────────────
-#   CMAKE_SYSTEM_NAME=iOS  CMAKE_OSX_ARCHITECTURES=arm64
-#   CMAKE_OSX_SYSROOT=iphoneos|iphonesimulator  CMAKE_OSX_DEPLOYMENT_TARGET=18.0
+#   CMAKE_SYSTEM_NAME=iOS|tvOS|visionOS|Darwin  CMAKE_OSX_ARCHITECTURES=arm64
+#   CMAKE_OSX_SYSROOT=<slice sysroot, see Triplets>
+#   CMAKE_OSX_DEPLOYMENT_TARGET=<slice minimum OS, see Triplets>
 #   CMAKE_BUILD_TYPE=Release  CESIUM_DISABLE_CURL=ON  CESIUM_TESTS_ENABLED=OFF
 #   CESIUM_INSTALL_STATIC_LIBS=ON  CESIUM_ENABLE_CLANG_TIDY=OFF
 #   VCPKG_MANIFEST_MODE=OFF (classic mode; see "Why classic mode" below)
@@ -44,7 +54,7 @@
 #   checkout and commit pinned here.
 #
 # ── Usage ───────────────────────────────────────────────────────────────────
-#   mise exec -- ./build-xcframework.sh [--slices "device simulator"]
+#   mise exec -- ./build-xcframework.sh [--slices "device simulator tvos tvos-simulator visionos visionos-simulator macos"]
 #                                      [--skip-deps] [--skip-build] [--clean]
 #   Environment:
 #     CESIUM_BUILD_ROOT   scratch root (default ~/.cache/cesium-native-xcframework)
@@ -65,9 +75,13 @@ CESIUM_REPO="https://github.com/CesiumGS/cesium-native.git"
 VCPKG_COMMIT="56bb2411609227288b70117ead2c47585ba07713"
 VCPKG_REPO="https://github.com/microsoft/vcpkg.git"
 DEPLOYMENT_TARGET="18.0"
+VISIONOS_DEPLOYMENT_TARGET="2.0"
+TVOS_DEPLOYMENT_TARGET="18.0"
+MACOS_DEPLOYMENT_TARGET="15.0"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TRIPLETS_DIR="$SCRIPT_DIR/triplets"
+PORTS_DIR="$SCRIPT_DIR/ports"
 BUILD_ROOT_DIR="${CESIUM_BUILD_ROOT:-$HOME/.cache/cesium-native-xcframework}"
 SRC_DIR="$BUILD_ROOT_DIR/cesium-native"
 VCPKG_ROOT="$BUILD_ROOT_DIR/vcpkg"
@@ -128,6 +142,15 @@ if [[ "$(git -C "$VCPKG_ROOT" rev-parse HEAD)" != "$VCPKG_COMMIT" ]]; then
   git -C "$VCPKG_ROOT" checkout --quiet "$VCPKG_COMMIT"
 fi
 [[ -x "$VCPKG_ROOT/vcpkg" ]] || { log "bootstrapping vcpkg"; "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics; }
+# Mobile Apple platforms cannot JIT. Accept both pristine upstream sources
+# and the visionOS guard written by earlier versions of this script.
+for f in "$SRC_DIR/CMakeLists.txt" "$SRC_DIR/CesiumVectorData/CMakeLists.txt"; do
+  if grep -qE 'NOT VCPKG_CMAKE_SYSTEM_NAME MATCHES "iOS(\|visionOS)?"' "$f"; then
+    log "patching asmjit guard for visionOS/tvOS in ${f#$SRC_DIR/}"
+    sed -i '' -E 's/NOT VCPKG_CMAKE_SYSTEM_NAME MATCHES "iOS(\|visionOS)?"( AND NOT CMAKE_SYSTEM_NAME STREQUAL "visionOS")?/NOT VCPKG_CMAKE_SYSTEM_NAME MATCHES "iOS|visionOS|tvOS" AND NOT CMAKE_SYSTEM_NAME MATCHES "visionOS|tvOS"/g' "$f"
+  fi
+done
+
 export VCPKG_ROOT
 export VCPKG_DISABLE_METRICS=1
 
@@ -136,30 +159,59 @@ if [[ $CLEAN -eq 1 ]]; then
   rm -rf "$BUILD_ROOT" "$OUT_DIR"; mkdir -p "$OUT_DIR"
 fi
 
-slice_triplet() { case "$1" in device) echo arm64-ios-release ;; simulator) echo arm64-ios-simulator-release ;; *) die "unknown slice $1" ;; esac; }
-slice_sysroot() { case "$1" in device) echo iphoneos ;; simulator) echo iphonesimulator ;; esac; }
+slice_triplet() {
+  case "$1" in
+    device) echo arm64-ios-release ;;
+    simulator) echo arm64-ios-simulator-release ;;
+    visionos) echo arm64-visionos-release ;;
+    visionos-simulator) echo arm64-visionos-simulator-release ;;
+    tvos) echo arm64-tvos-release ;;
+    tvos-simulator) echo arm64-tvos-simulator-release ;;
+    macos) echo arm64-osx-release ;;
+    *) die "unknown slice $1" ;;
+  esac
+}
+slice_sysroot() {
+  case "$1" in
+    device) echo iphoneos ;; simulator) echo iphonesimulator ;;
+    visionos) echo xros ;; visionos-simulator) echo xrsimulator ;;
+    tvos) echo appletvos ;; tvos-simulator) echo appletvsimulator ;;
+    macos) echo macosx ;;
+  esac
+}
+slice_system() { case "$1" in tvos*) echo tvOS ;; visionos*) echo visionOS ;; macos) echo Darwin ;; *) echo iOS ;; esac; }
+slice_min_os() { case "$1" in tvos*) echo "$TVOS_DEPLOYMENT_TARGET" ;; visionos*) echo "$VISIONOS_DEPLOYMENT_TARGET" ;; macos) echo "$MACOS_DEPLOYMENT_TARGET" ;; *) echo "$DEPLOYMENT_TARGET" ;; esac; }
 
 # ── Per-slice: dependencies → configure → build → install → merge ──────────
 for slice in $SLICES; do
   triplet="$(slice_triplet "$slice")"
+  # macOS can JIT, so it takes the upstream blend2d + asmjit pair that
+  # cesium-native's CMake requires there; every other slice uses blend2d[core].
+  packages=("${PACKAGES[@]}")
+  if [[ "$slice" == macos ]]; then
+    packages=("${packages[@]/blend2d\[core\]/blend2d}" asmjit)
+  fi
   sysroot="$(slice_sysroot "$slice")"
+  system="$(slice_system "$slice")"
+  min_os="$(slice_min_os "$slice")"
   build_dir="$BUILD_ROOT/$slice"
   install_dir="$build_dir/install"
   installed_dir="$VCPKG_ROOT/installed/$triplet"
   mkdir -p "$build_dir"
 
   if [[ $SKIP_DEPS -eq 0 ]]; then
-    log "[$slice] vcpkg install ${#PACKAGES[@]} ports for $triplet"
+    log "[$slice] vcpkg install ${#packages[@]} ports for $triplet"
     # Ports that fail on iOS can be retried standalone with the stock
     # arm64-ios(-simulator) community triplet (the community-thread fallback);
     # the log records which, if any, needed it.
     ports_log="$OUT_DIR/ports.$slice.log"
     : > "$ports_log"
     failed=()
-    for pkg in "${PACKAGES[@]}"; do
+    for pkg in "${packages[@]}"; do
       if "$VCPKG_ROOT/vcpkg" install "$pkg" \
            --triplet "$triplet" \
            --overlay-triplets="$TRIPLETS_DIR" \
+           --overlay-ports="$PORTS_DIR" \
            --overlay-ports="$SRC_DIR/extern/vcpkg/ports" \
            --clean-buildtrees-after-build \
            >"$build_dir/vcpkg-$(echo "$pkg" | tr -c 'A-Za-z0-9' '_').log" 2>&1; then
@@ -169,6 +221,9 @@ for slice in $SLICES; do
         failed+=("$pkg")
       fi
     done
+    if [[ ${#failed[@]} -gt 0 && "$system" != iOS && "$system" != Darwin ]]; then
+      die "[$slice] ports failed: ${failed[*]} (no stock $system triplet to fall back to); see $ports_log"
+    fi
     if [[ ${#failed[@]} -gt 0 ]]; then
       log "[$slice] ports failed: ${failed[*]} — trying stock community triplet fallback"
       stock="${triplet%-release}"
@@ -194,13 +249,13 @@ for slice in $SLICES; do
       -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
       -DVCPKG_TARGET_TRIPLET="$triplet" \
       -DVCPKG_OVERLAY_TRIPLETS="$TRIPLETS_DIR" \
-      -DVCPKG_OVERLAY_PORTS="$SRC_DIR/extern/vcpkg/ports" \
+      -DVCPKG_OVERLAY_PORTS="$PORTS_DIR;$SRC_DIR/extern/vcpkg/ports" \
       -DVCPKG_MANIFEST_MODE=OFF \
       -DCESIUM_USE_EZVCPKG=OFF \
-      -DCMAKE_SYSTEM_NAME=iOS \
+      -DCMAKE_SYSTEM_NAME="$system" \
       -DCMAKE_OSX_ARCHITECTURES=arm64 \
       -DCMAKE_OSX_SYSROOT="$sysroot" \
-      -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" \
+      -DCMAKE_OSX_DEPLOYMENT_TARGET="$min_os" \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_INSTALL_PREFIX="$install_dir" \
       -DCESIUM_DISABLE_CURL=ON \
